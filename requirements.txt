@@ -1,0 +1,30 @@
+# requirements.txt — Sentinel-SN 
+# Groupe2: Ahmed Fall et Abou B Salle | Python 3.9 | Spark 3.3
+
+# Kafka
+kafka-python==2.0.2
+
+# Spark
+pyspark==3.3.2
+
+# Validation
+pandera==0.17.2
+pandas==2.0.3
+
+# Stockage
+happybase==1.2.0
+pyhive==0.7.0
+thrift==0.16.0
+
+# Orchestration & MLOps
+apache-airflow==2.7.3
+mlflow==2.8.1
+
+# Analyse & Visualisation
+matplotlib==3.7.3
+seaborn==0.12.2
+scipy==1.11.4
+numpy==1.24.4
+
+# Tests
+pytest==7.4.3
