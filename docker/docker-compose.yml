@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # Zookeeper est nécessaire pour coordonner le cluster Kafka
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: sentinel_zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+
+  # Kafka pour le streaming des messages épidémiologiques
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: sentinel_kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+    depends_on:
+      - zookeeper
+
+  # Apache NiFi pour l'ingestion et le routage des données
+  nifi:
+    image: apache/nifi:latest
+    container_name: sentinel_nifi
+    ports:
+      - "8443:8443"
+    environment:
+      - NIFI_WEB_HTTPS_PORT=8443
+      - SINGLE_USER_CREDENTIALS_USERNAME=admin
+      - SINGLE_USER_CREDENTIALS_PASSWORD=sentinel_password_2026
+    volumes:
+      - ./nifi_templates:/opt/nifi/nifi-current/conf/templates
