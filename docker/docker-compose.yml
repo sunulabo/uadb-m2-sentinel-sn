@@ -1,7 +1,7 @@
 services:
-  # Kafka en mode KRaft (sans Zookeeper) — standard depuis Kafka 3.3+
+  # ─── Kafka en mode KRaft (sans Zookeeper) — standard depuis Kafka 3.3+ ───
   kafka:
-    image: apache/kafka:3.7.0
+    image: apache/kafka:3.7.0          # version épinglée (audit: ne jamais utiliser :latest)
     container_name: sentinel_kafka
     ports:
       - "9092:9092"
@@ -17,13 +17,26 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 168          # rétention 7 jours
       CLUSTER_ID: sentinel-sn-cluster-01
     volumes:
       - kafka_data:/var/lib/kafka/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G                          # audit: limite mémoire pour dev
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - sentinel_net
 
-  # Apache NiFi pour l'ingestion et le routage des données
+  # ─── Apache NiFi pour l'ingestion et le routage des données ──────────────
   nifi:
-    image: apache/nifi:latest
+    image: apache/nifi:2.0.0           # audit: version épinglée (était :latest)
     container_name: sentinel_nifi
     ports:
       - "8443:8443"
@@ -34,8 +47,28 @@ services:
     volumes:
       - ./nifi_templates:/opt/nifi/nifi-current/conf/templates
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy      # attend que Kafka soit prêt
+    deploy:
+      resources:
+        limits:
+          memory: 2G                   # NiFi est gourmand en RAM
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -k https://localhost:8443/nifi/ || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 60s               # NiFi met ~60s à démarrer
+    networks:
+      - sentinel_net
 
+# ─── Volumes persistants ─────────────────────────────────────────────────────
 volumes:
   kafka_data:
     driver: local
+
+# ─── Réseau isolé dédié (audit: séparation réseau) ───────────────────────────
+networks:
+  sentinel_net:
+    driver: bridge
+    name: equipe02_sentinel_network
