@@ -3,6 +3,7 @@ import time
 import random
 import sys
 import os
+import hashlib
 from datetime import datetime
 from kafka import KafkaProducer
 import pandas as pd
@@ -22,8 +23,12 @@ REGIONS = ["Dakar", "Saint-Louis", "Ziguinchor", "Touba", "Thies"]
 PATHOLOGIES = ["PALU", "GRIPPE", "DENGUE", "CHOLERA"]
 
 def generate_health_data():
+    raw_id = f"P-{random.randint(1000, 9999)}"
+    # Privacy Layer : Hachage de l'identifiant pour garantir l'anonymat
+    hashed_id = hashlib.sha256(raw_id.encode('utf-8')).hexdigest()
+    
     return {
-        "id_patient": f"P-{random.randint(1000, 9999)}",
+        "id_patient": hashed_id,
         "date_consultation": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "age": random.randint(1, 85),
         "sexe": random.choice(["M", "F"]),

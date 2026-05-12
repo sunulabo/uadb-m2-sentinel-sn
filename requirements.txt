@@ -2,3 +2,4 @@ pandas
 pandera
 kafka-python
 numpy
+happybase
