@@ -3,3 +3,7 @@ pandera
 kafka-python
 numpy
 happybase
+scikit-learn
+matplotlib
+seaborn
+streamlit
