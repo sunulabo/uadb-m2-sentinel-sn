@@ -69,7 +69,3 @@ python scripts/kafka_producer.py
 cd dashboard
 streamlit run dashboard_app.py
 ```
-
-## 📜 Conventions
-- **Base de données/Topics** : Préfixe `equipe02_`
-- **Commits** : Format `[Sx] type: description`

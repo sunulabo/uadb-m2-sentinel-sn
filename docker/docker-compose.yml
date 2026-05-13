@@ -1,7 +1,8 @@
 services:
-  # ─── Kafka en mode KRaft (sans Zookeeper) — standard depuis Kafka 3.3+ ───
+
+  # ─── Kafka (KRaft, sans Zookeeper) ──────────────────────────────────────────
   kafka:
-    image: apache/kafka:3.7.0          # version épinglée (audit: ne jamais utiliser :latest)
+    image: apache/kafka:3.7.0
     container_name: sentinel_kafka
     ports:
       - "9092:9092"
@@ -17,26 +18,77 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-      KAFKA_LOG_RETENTION_HOURS: 168          # rétention 7 jours
+      KAFKA_LOG_RETENTION_HOURS: 168
       CLUSTER_ID: sentinel-sn-cluster-01
     volumes:
       - kafka_data:/var/lib/kafka/data
     deploy:
       resources:
         limits:
-          memory: 1G                          # audit: limite mémoire pour dev
+          memory: 1G
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     networks:
       - sentinel_net
 
-  # ─── Apache NiFi pour l'ingestion et le routage des données ──────────────
+  # ─── HDFS — NameNode (maître du système de fichiers distribué) ───────────────
+  namenode:
+    platform: linux/amd64   # image bde2020 construite pour amd64 (émulation Rosetta sur Apple Silicon)
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: sentinel_namenode
+    ports:
+      - "9870:9870"   # Interface Web HDFS
+      - "9000:9000"   # Port HDFS pour les clients (NiFi, Hive, etc.)
+    environment:
+      - CLUSTER_NAME=equipe02-sentinel-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - CORE_CONF_hadoop_http_staticuser_user=root
+      - HDFS_CONF_dfs_replication=1
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check=false
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9870"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - sentinel_net
+
+  # ─── HDFS — DataNode (stockage réel des blocs) ───────────────────────────────
+  datanode:
+    platform: linux/amd64   # même raison que namenode
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: sentinel_datanode
+    depends_on:
+      namenode:
+        condition: service_healthy
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - HDFS_CONF_dfs_replication=1
+    volumes:
+      - datanode_data:/hadoop/dfs/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    networks:
+      - sentinel_net
+
+  # ─── Apache NiFi 1.27 (avec PutHDFS natif) ───────────────────────────────────
+  # Note: NiFi 2.0 a retiré les processors Hadoop de sa distribution standard.
+  # On revient à NiFi 1.27.0 qui inclut PutHDFS, ConsumeKafkaRecord_2_6, etc.
   nifi:
-    image: apache/nifi:2.0.0           # audit: version épinglée (était :latest)
+    image: apache/nifi:1.27.0
     container_name: sentinel_nifi
     ports:
       - "8443:8443"
@@ -44,30 +96,41 @@ services:
       - NIFI_WEB_HTTPS_PORT=8443
       - SINGLE_USER_CREDENTIALS_USERNAME=admin
       - SINGLE_USER_CREDENTIALS_PASSWORD=sentinel_password_2026
+      # Pointer NiFi vers le NameNode HDFS
+      - NIFI_SENSITIVE_PROPS_KEY=sentinel_nifi_key_equipe02
     volumes:
       - ./nifi_templates:/opt/nifi/nifi-current/conf/templates
+      - nifi_data:/opt/nifi/nifi-current/state
     depends_on:
       kafka:
-        condition: service_healthy      # attend que Kafka soit prêt
+        condition: service_healthy
+      namenode:
+        condition: service_healthy
     deploy:
       resources:
         limits:
-          memory: 2G                   # NiFi est gourmand en RAM
+          memory: 2G
     healthcheck:
       test: ["CMD-SHELL", "curl -f -k https://localhost:8443/nifi/ || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 10
-      start_period: 60s               # NiFi met ~60s à démarrer
+      start_period: 90s
     networks:
       - sentinel_net
 
-# ─── Volumes persistants ─────────────────────────────────────────────────────
+# ─── Volumes persistants ──────────────────────────────────────────────────────
 volumes:
   kafka_data:
     driver: local
+  namenode_data:
+    driver: local
+  datanode_data:
+    driver: local
+  nifi_data:
+    driver: local
 
-# ─── Réseau isolé dédié (audit: séparation réseau) ───────────────────────────
+# ─── Réseau isolé dédié ───────────────────────────────────────────────────────
 networks:
   sentinel_net:
     driver: bridge
